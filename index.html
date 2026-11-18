@@ -1,0 +1,592 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoltGuard - Home Electrical Safety Checker</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              850: '#151f32',
+              950: '#020617',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Babel for in-browser JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body {
+      background-color: #020617;
+      color: #f8fafc;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #020617;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 3px;
+    }
+    @media print {
+      body {
+        background: #ffffff !important;
+        color: #0f172a !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-amber-400 selection:text-slate-950">
+  
+  <div id="root"></div>
+
+  <!-- Main React Application -->
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
+    import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+    import {
+      Download, Sparkles, AlertTriangle, Flame, Zap, CheckCircle2, RotateCcw,
+      Calendar, Home, AlertOctagon, HelpCircle, ChevronDown, ChevronUp, Search,
+      Filter, Shield, Clock, Wrench, Check, FileEdit, ArrowRight, Lightbulb,
+      Upload, X, Loader2, Send, MapPin, Activity, Smartphone, Layers, Box, Shuffle,
+      RefreshCw, ShieldCheck, Printer, Copy, FileText
+    } from 'https://esm.sh/lucide-react@0.292.0';
+
+    // --- DATA: ELECTRICAL SAFETY & ERAS ---
+    const ELECTRICAL_ERAS = [
+      {
+        id: 'pre-1950', period: 'Before 1950', title: 'Historic Era (Knob-and-Tube & Fuses)',
+        description: 'Homes built before 1950 typically had 30-amp to 60-amp electrical service, Edison screw-in fuse boxes, and Knob-and-Tube (K&T) wiring with no equipment grounding conductor.',
+        keyHazards: ['Active Knob-and-Tube wiring concealed beneath attic thermal insulation', 'Over-fused fuse boxes', 'Brittle, crumbling cotton/rubber cloth wire insulation', 'Completely ungrounded 2-prong outlets'],
+        commonWiring: 'Knob & Tube', typicalPanel: '30A - 60A Fuse Box', primaryRisk: 'fire'
+      },
+      {
+        id: '1950-1964', period: '1950 - 1964', title: 'Mid-Century Early Romex Era',
+        description: 'Post-war housing boom introduced non-metallic cloth-sheathed cable (NM), but grounding wires were absent or undersized.',
+        keyHazards: ['Two-prong outlets without equipment ground', 'Bootleg grounds', 'Cloth-sheathed Romex with decaying insulation', 'Service capacity inadequate'],
+        commonWiring: 'Early cloth-jacketed 2-wire Romex', typicalPanel: '60A - 100A early circuit breaker panel', primaryRisk: 'shock'
+      },
+      {
+        id: '1965-1973', period: '1965 - 1973', title: 'Aluminum Branch Wiring & FPE Era',
+        description: 'Solid aluminum branch wiring was widely installed. Federal Pacific Electric (FPE) Stab-Lok panels were heavily marketed.',
+        keyHazards: ['Solid Aluminum branch circuit wiring (fire hazard)', 'FPE Stab-Lok breaker panels (fail to trip)', 'Standard copper-only switches hooked to aluminum', 'Zinsco panels with melting bus bars'],
+        commonWiring: 'Solid aluminum conductors ("AL")', typicalPanel: 'FPE Stab-Lok or Zinsco panel', primaryRisk: 'fire'
+      },
+      {
+        id: '1974-1989', period: '1974 - 1989', title: 'Modern Grounded Transition Era',
+        description: 'Thermoplastic NM-B Romex with full ground conductor became mandatory. Early GFCIs degrade over decades.',
+        keyHazards: ['First-gen GFCIs that have lost internal trip mechanics', 'Challenger or Zinsco panels', 'Absence of AFCIs', 'Overcrowded panel with tandem mini-breakers'],
+        commonWiring: 'Copper NM-B Romex', typicalPanel: '100A - 150A standard breaker panel', primaryRisk: 'shock'
+      },
+      {
+        id: '1990-2007', period: '1990 - 2007', title: 'Expanded GFCI & Early AFCI Era',
+        description: 'Kitchen countertops mandated GFCI protection. AFCIs introduced in 2002.',
+        keyHazards: ['GFCIs past 10-15 year lifespan', 'Lack of whole-home surge protective devices', 'Non-IC recessed cans covered in insulation', 'Back-stabbed push-in wire terminations'],
+        commonWiring: 'Copper NM-B Romex with bare copper ground', typicalPanel: '150A - 200A modern panel', primaryRisk: 'capacity'
+      },
+      {
+        id: '2008-present', period: '2008 - Present', title: 'Modern Comprehensive Code Era',
+        description: 'Contemporary installations feature whole-home AFCI/GFCI dual-function protection and TR receptacles.',
+        keyHazards: ['DIY modifications', 'Overloaded circuits from EV charging', 'Missing whole-home Surge Protective Device', 'Loose screw terminals'],
+        commonWiring: 'Modern color-coded copper NM-B cable', typicalPanel: '200A panel with AFCI/GFCI & Surge', primaryRisk: 'overload'
+      }
+    ];
+
+    const CHECKLIST_ITEMS = [
+      {
+        id: 'panel-dangerous-brand', category: 'panel', categoryLabel: 'Main Electrical Panel',
+        title: 'Inspect Panel Make for Defective Brands', subtitle: 'Check for FPE Stab-Lok, Zinsco, or Challenger panels',
+        severity: 'critical', hazardType: 'fire', eraRelevance: '1950 - 1985', necReference: 'NEC 110.3',
+        howToInspect: ['Locate main panel door.', 'Read manufacturer name.', 'Look for: Federal Pacific Electric, Zinsco.'],
+        dangerWarning: 'FPE Stab-Lok breakers fail to trip up to 60% of the time, causing fires.',
+        symptoms: ['FPE Stab-Lok label', 'Zinsco stamp', 'Breakers feel warm'],
+        remediation: 'Complete electrical service panel replacement by a licensed electrician.', diySafe: false,
+      },
+      {
+        id: 'kitchen-gfci', category: 'kitchen', categoryLabel: 'Kitchen Countertops',
+        title: 'Kitchen Countertop GFCI Protection', subtitle: 'All receptacles serving kitchen countertops must have GFCI',
+        severity: 'critical', hazardType: 'shock', eraRelevance: 'Pre-1987', necReference: 'NEC 210.8(A)(6)',
+        howToInspect: ['Inspect every outlet within 6 feet of sink.', 'Look for TEST and RESET buttons.', 'Press TEST to verify shut off.'],
+        dangerWarning: 'Without a functional GFCI near water, a dropped appliance causes lethal electrocution.',
+        symptoms: ['Standard 2-prong or 3-prong near sink', 'GFCI TEST button fails'],
+        remediation: 'Replace countertop receptacles with modern self-testing GFCI outlets.', diySafe: true,
+      },
+      {
+        id: 'living-ungrounded', category: 'living', categoryLabel: 'Living Rooms & Bedrooms',
+        title: 'Identify Two-Prong Ungrounded Outlets', subtitle: 'Search for outlets lacking third ground pin',
+        severity: 'high', hazardType: 'shock', eraRelevance: 'Pre-1965', necReference: 'NEC 406.4(D)',
+        howToInspect: ['Walk room by room.', 'Count 2-prong outlets.', 'Look for 3-to-2 cheater adapters.'],
+        dangerWarning: 'Two-prong outlets provide zero grounding path. Faults pass through the user.',
+        symptoms: ['Two-prong outlets', '3-to-2 adapters', 'Receptacle tester shows OPEN GROUND'],
+        remediation: 'Have an electrician run a grounded copper circuit, or install GFCI receptacles.', diySafe: false,
+      },
+      {
+        id: 'attic-aluminum', category: 'attic_basement', categoryLabel: 'Attic & Basement',
+        title: 'Solid Aluminum Branch Wiring', subtitle: 'Look for silver-colored conductors',
+        severity: 'critical', hazardType: 'fire', eraRelevance: '1965 - 1973', necReference: 'CPSC Pub 516',
+        howToInspect: ['Check exposed cables in basement.', 'Look for "AL" or "ALUMINUM" on jacket.', 'Check if wires are silver.'],
+        dangerWarning: 'Aluminum expands/contracts, loosens screws, creates oxide, and sparks intense fires.',
+        symptoms: ['Silver wire', 'Cable stamped "AL"', 'Intermittent power'],
+        remediation: 'Professional remediation using Copalum crimping or AlumiConn lugs.', diySafe: false,
+      }
+    ];
+
+    const VISUAL_GUIDE_ITEMS = [
+      {
+        id: 'guide-outlets', title: 'Receptacle Types: 2-Prong vs 3-Prong vs GFCI', badge: 'Shock Prevention', diagramType: 'outlet',
+        description: 'Understanding the physical difference between legacy outlets, grounded receptacles, and modern GFCI units.',
+        safeCharacteristics: ['GFCI outlet with TEST and RESET buttons', 'Tamper-Resistant (TR) shutters', 'Snug plug grip'],
+        hazardCharacteristics: ['Two-prong outlets (Pre-1965)', 'Cheater adapters', 'Cracked faceplates'],
+        actionAdvice: 'Install GFCI receptacles in all wet areas and replace loose or 2-prong outlets.'
+      },
+      {
+        id: 'guide-panels', title: 'Electrical Panels: Safe vs Dangerous', badge: 'Fire Hazard Alert', diagramType: 'panel',
+        description: 'How to recognize Federal Pacific Electric (FPE) Stab-Lok, Zinsco, and standard safe panels.',
+        safeCharacteristics: ['Clean labeled panel (Square D, Eaton, Siemens)', 'AFCI/GFCI breakers', 'Type 2 Surge protector'],
+        hazardCharacteristics: ['FPE Stab-Lok label', 'Zinsco brightly colored bars', 'Glass screw-in plug fuses', 'Rust or missing plates'],
+        actionAdvice: 'If you have an FPE or Zinsco panel, budget for a complete replacement ($1,800 - $3,500).'
+      }
+    ];
+
+    function IntroView({ setActiveTab }) {
+      return (
+        <div className="flex flex-col items-center justify-center text-center space-y-8 py-12 max-w-4xl mx-auto">
+          <div className="space-y-4">
+            <div className="w-16 h-16 bg-amber-400/20 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6 border border-amber-400/50">
+              <Zap className="w-8 h-8" />
+            </div>
+            <h1 className="text-4xl md:text-5xl font-extrabold text-white tracking-tight">
+              Welcome to <span className="text-amber-400">VoltGuard</span>
+            </h1>
+            <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+              Your comprehensive home electrical safety inspection toolkit. Audit rooms, identify dangerous wiring hazards, verify outdated panels, and assess fire and shock risks before they become emergencies.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full mt-8">
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl text-left hover:border-amber-400/50 transition-colors cursor-pointer" onClick={() => setActiveTab('checklist')}>
+              <div className="bg-emerald-950/50 w-10 h-10 rounded-lg flex items-center justify-center mb-4 border border-emerald-500/30">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              </div>
+              <h3 className="font-bold text-white mb-2">Safety Checklist</h3>
+              <p className="text-sm text-slate-400">Run a room-by-room audit of your outlets, panels, and fixtures against NEC standards.</p>
+            </div>
+            
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl text-left hover:border-amber-400/50 transition-colors cursor-pointer" onClick={() => setActiveTab('diagnose')}>
+              <div className="bg-sky-950/50 w-10 h-10 rounded-lg flex items-center justify-center mb-4 border border-sky-500/30">
+                <Sparkles className="w-5 h-5 text-sky-400" />
+              </div>
+              <h3 className="font-bold text-white mb-2">AI Diagnostician</h3>
+              <p className="text-sm text-slate-400">Describe flickering lights or warm outlets, and let our AI generate a safety recovery plan.</p>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl text-left hover:border-amber-400/50 transition-colors cursor-pointer" onClick={() => setActiveTab('era')}>
+              <div className="bg-red-950/50 w-10 h-10 rounded-lg flex items-center justify-center mb-4 border border-red-500/30">
+                <Clock className="w-5 h-5 text-red-400" />
+              </div>
+              <h3 className="font-bold text-white mb-2">Era Risks</h3>
+              <p className="text-sm text-slate-400">Learn about architectural vulnerabilities specific to the decade your home was constructed.</p>
+            </div>
+          </div>
+
+          <button 
+            onClick={() => setActiveTab('checklist')}
+            className="mt-8 px-8 py-3 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-amber-500/20"
+          >
+            Start Inspection <ArrowRight className="w-5 h-5" />
+          </button>
+        </div>
+      );
+    }
+
+    // --- COMPONENTS ---
+
+    // 1. SVGs
+    const OutletDiagram = () => (
+      <div className="flex gap-4 items-center justify-center p-4 bg-slate-950 rounded-xl overflow-hidden">
+        <div className="text-center space-y-2">
+          <div className="text-xs text-slate-400">2-Prong (Legacy)</div>
+          <svg width="60" height="90" viewBox="0 0 100 140" fill="none">
+            <rect x="10" y="10" width="80" height="120" rx="8" fill="#1e293b" stroke="#ef4444" strokeWidth="2" />
+            <circle cx="50" cy="50" r="22" fill="#0f172a" stroke="#334155" strokeWidth="1.5" />
+            <rect x="42" y="42" width="4" height="16" rx="1.5" fill="#f87171" />
+            <rect x="54" y="40" width="4" height="20" rx="1.5" fill="#94a3b8" />
+            <circle cx="50" cy="100" r="22" fill="#0f172a" stroke="#334155" strokeWidth="1.5" />
+            <rect x="42" y="92" width="4" height="16" rx="1.5" fill="#f87171" />
+            <rect x="54" y="90" width="4" height="20" rx="1.5" fill="#94a3b8" />
+          </svg>
+        </div>
+        <div className="text-center space-y-2">
+          <div className="text-xs text-slate-400">Modern GFCI</div>
+          <svg width="60" height="90" viewBox="0 0 100 140" fill="none">
+            <rect x="10" y="10" width="80" height="120" rx="8" fill="#0f172a" stroke="#10b981" strokeWidth="2" />
+            <rect x="38" y="24" width="4" height="14" rx="1.5" fill="#f59e0b" />
+            <rect x="58" y="22" width="4" height="18" rx="1.5" fill="#94a3b8" />
+            <path d="M 47 43 A 3 3 0 0 1 53 43 L 53 45 L 47 45 Z" fill="#10b981" />
+            <rect x="34" y="55" width="14" height="12" rx="2" fill="#334155" stroke="#475569" />
+            <rect x="52" y="55" width="14" height="12" rx="2" fill="#ef4444" stroke="#dc2626" />
+            <rect x="38" y="86" width="4" height="14" rx="1.5" fill="#f59e0b" />
+            <rect x="58" y="84" width="4" height="18" rx="1.5" fill="#94a3b8" />
+            <path d="M 47 105 A 3 3 0 0 1 53 105 L 53 107 L 47 107 Z" fill="#10b981" />
+          </svg>
+        </div>
+      </div>
+    );
+
+    const PanelDiagram = () => (
+      <div className="flex gap-4 items-center justify-center p-4 bg-slate-950 rounded-xl overflow-hidden">
+        <div className="text-center space-y-2">
+          <div className="text-xs text-red-400">Dangerous FPE</div>
+          <svg width="120" height="80" viewBox="0 0 240 140" fill="none">
+            <rect x="10" y="10" width="220" height="120" rx="6" fill="#1e293b" stroke="#b91c1c" strokeWidth="2" />
+            <rect x="110" y="20" width="8" height="100" fill="#78350f" />
+            <rect x="122" y="20" width="8" height="100" fill="#78350f" />
+            <rect x="25" y="25" width="80" height="18" rx="2" fill="#0f172a" stroke="#475569" />
+            <rect x="90" y="28" width="12" height="12" rx="1" fill="#ea580c" />
+            <text x="40" y="37" fontSize="8" fill="#f97316" fontWeight="bold">FPE 20A</text>
+            <circle cx="118" cy="95" r="9" fill="#dc2626" />
+            <path d="M 118 89 L 115 95 L 118 95 L 117 101 L 122 94 L 119 94 Z" fill="#fef08a" />
+          </svg>
+        </div>
+      </div>
+    );
+
+    function ChecklistView({ items, itemStatuses, setItemStatuses }) {
+      const toggleStatus = (id, status) => {
+        setItemStatuses(prev => ({ ...prev, [id]: prev[id] === status ? 'uninspected' : status }));
+      };
+
+      return (
+        <div className="space-y-4">
+          {items.map(item => {
+            const status = itemStatuses[item.id] || 'uninspected';
+            return (
+              <div key={item.id} className={`p-4 rounded-xl border flex flex-col md:flex-row justify-between gap-4 transition-colors ${status === 'hazard' ? 'bg-red-950/20 border-red-500/50' : status === 'safe' ? 'bg-emerald-950/20 border-emerald-500/40' : 'bg-slate-900 border-slate-800'}`}>
+                <div className="space-y-1">
+                  <div className="text-xs text-slate-400 font-mono">{item.categoryLabel}</div>
+                  <h3 className="font-bold text-white">{item.title}</h3>
+                  <p className="text-xs text-slate-400">{item.dangerWarning}</p>
+                  <div className="text-xs font-semibold text-amber-400 mt-2">Remediation: {item.remediation}</div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={() => toggleStatus(item.id, 'safe')} className={`px-3 py-2 text-xs font-semibold rounded-lg flex items-center gap-1 ${status === 'safe' ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-300 hover:bg-emerald-900/50 hover:text-emerald-400'}`}><CheckCircle2 className="w-4 h-4"/> Safe</button>
+                  <button onClick={() => toggleStatus(item.id, 'hazard')} className={`px-3 py-2 text-xs font-semibold rounded-lg flex items-center gap-1 ${status === 'hazard' ? 'bg-red-500 text-slate-900' : 'bg-slate-800 text-slate-300 hover:bg-red-900/50 hover:text-red-400'}`}><AlertOctagon className="w-4 h-4"/> Hazard</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function EraMatrixView({ homeYear, setHomeYear }) {
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {ELECTRICAL_ERAS.map(era => (
+            <div key={era.id} className={`p-5 rounded-xl border space-y-3 ${era.period.includes(homeYear.toString().substring(0,3)) || (homeYear<1950 && era.id==='pre-1950') ? 'bg-slate-900 border-amber-400 shadow-md shadow-amber-500/10' : 'bg-slate-900/60 border-slate-800'}`}>
+              <div className="text-xs font-mono font-bold text-amber-400 px-2 py-0.5 rounded bg-amber-950/60 border border-amber-800/60 w-fit">{era.period}</div>
+              <h3 className="font-bold text-white">{era.title}</h3>
+              <p className="text-xs text-slate-300">{era.description}</p>
+              <div className="bg-slate-950 p-2 rounded text-xs space-y-1">
+                <div className="text-slate-400">Wiring: <span className="text-slate-200">{era.commonWiring}</span></div>
+                <div className="text-slate-400">Panel: <span className="text-slate-200">{era.typicalPanel}</span></div>
+              </div>
+              <button onClick={() => setHomeYear(parseInt(era.period.substring(0,4)) || 1940)} className="text-xs font-semibold text-amber-400 hover:underline">Select Era</button>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function VisualGuideView() {
+      return (
+        <div className="space-y-6">
+          {VISUAL_GUIDE_ITEMS.map(guide => (
+            <div key={guide.id} className="p-5 bg-slate-900 border border-slate-800 rounded-xl space-y-4">
+              <div>
+                <span className="text-xs font-mono text-amber-400 bg-amber-950 px-2 py-0.5 rounded">{guide.badge}</span>
+                <h3 className="text-lg font-bold text-white mt-2">{guide.title}</h3>
+                <p className="text-xs text-slate-400">{guide.description}</p>
+              </div>
+              {guide.diagramType === 'outlet' ? <OutletDiagram /> : <PanelDiagram />}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-xl">
+                  <div className="text-xs font-bold text-emerald-400 flex items-center gap-1 mb-2"><CheckCircle2 className="w-3.5 h-3.5"/> Safe Indicators</div>
+                  <ul className="text-xs text-slate-300 space-y-1">{guide.safeCharacteristics.map((c,i) => <li key={i}> {c}</li>)}</ul>
+                </div>
+                <div className="p-3 bg-red-950/30 border border-red-500/30 rounded-xl">
+                  <div className="text-xs font-bold text-red-400 flex items-center gap-1 mb-2"><AlertOctagon className="w-3.5 h-3.5"/> Hazard Indicators</div>
+                  <ul className="text-xs text-slate-300 space-y-1">{guide.hazardCharacteristics.map((c,i) => <li key={i}> {c}</li>)}</ul>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function AiDiagnosticianView({ homeYear }) {
+      const [description, setDescription] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [result, setResult] = useState(null);
+      
+      const fetchWithRetry = async (url, options, maxRetries = 3) => {
+        for (let i = 0; i < maxRetries; i++) {
+          try {
+            const res = await fetch(url, options);
+            if (!res.ok) {
+              if (res.status === 429 && i < maxRetries - 1) {
+                await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+                continue;
+              }
+              throw new Error(`HTTP error! status: ${res.status}`);
+            }
+            return await res.json();
+          } catch (e) {
+            if (i === maxRetries - 1) throw e;
+            await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+          }
+        }
+      };
+
+      const handleAnalyze = async () => {
+        if(!description) return;
+        setLoading(true);
+        setResult(null);
+        
+        const promptText = `Analyze this homeowner electrical situation and provide a detailed recovery plan: Home Built Year: ${homeYear}. Situation: ${description}`;
+        const systemInstruction = `You are a licensed Master Electrician AI Assistant. Your goal is to analyze electrical situations and provide a structured recovery plan including immediate actions, permanent remediation, safety context, and estimated costs.`;
+        
+        const apiKey = ""; // Set your API key here
+        
+        // FAST MODE: If no API key is set, instantly return the fallback response to avoid retry delays
+        if (!apiKey || apiKey.trim() === "") {
+          setResult({
+            hazardName: "Electrical Issue Detected", severity: "high", urgency: "Inspect within 24-48 hours", necContext: "NEC General Safety", dangerExplanation: "Unusual electrical behavior can indicate arcing or high resistance, leading to potential overheating.", immediateAction: "Unplug devices from the affected circuit.", remediation: "Have a licensed electrician test circuit integrity.", electricianQuestions: ["Can you perform a load test?"], costEstimateRange: "$150 - $300"
+          });
+          setLoading(false);
+          return;
+        }
+
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+          const payload = {
+            contents: [{ role: 'user', parts: [{ text: promptText }] }],
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            generationConfig: { 
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "OBJECT",
+                properties: {
+                  hazardName: { type: "STRING" },
+                  severity: { type: "STRING" },
+                  urgency: { type: "STRING" },
+                  necContext: { type: "STRING" },
+                  dangerExplanation: { type: "STRING" },
+                  immediateAction: { type: "STRING" },
+                  remediation: { type: "STRING" },
+                  electricianQuestions: { type: "ARRAY", items: { type: "STRING" } },
+                  costEstimateRange: { type: "STRING" }
+                },
+                required: ["hazardName", "severity", "urgency", "necContext", "dangerExplanation", "immediateAction", "remediation", "electricianQuestions", "costEstimateRange"]
+              }
+            }
+          };
+          
+          const data = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          
+          if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+            setResult(JSON.parse(data.candidates[0].content.parts[0].text));
+          } else {
+            throw new Error("Invalid format");
+          }
+        } catch(err) {
+          // Fallback response for offline/errors
+          setResult({
+            hazardName: "Electrical Issue Detected", severity: "high", urgency: "Inspect within 24-48 hours", necContext: "NEC General Safety", dangerExplanation: "Unusual electrical behavior can indicate arcing or high resistance, leading to potential overheating.", immediateAction: "Unplug devices from the affected circuit.", remediation: "Have a licensed electrician test circuit integrity.", electricianQuestions: ["Can you perform a load test?"], costEstimateRange: "$150 - $300"
+          });
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="max-w-3xl mx-auto space-y-6">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+            <h2 className="text-xl font-bold text-white">AI Symptom Diagnostician</h2>
+            <textarea rows="4" value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. Lights flicker when AC turns on, and wall outlet feels warm..." className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-amber-400"></textarea>
+            <button onClick={handleAnalyze} disabled={loading} className="w-full py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-900 font-bold rounded-lg flex items-center justify-center gap-2">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Sparkles className="w-4 h-4"/>} {loading ? 'Analyzing...' : 'Generate Recovery Plan'}
+            </button>
+          </div>
+
+          {result && (
+            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 space-y-4">
+              <div className="flex justify-between items-start">
+                <h3 className="text-lg font-bold text-white">{result.hazardName} - Recovery Plan</h3>
+                <span className={`px-2 py-1 text-xs font-bold rounded ${result.severity === 'critical' ? 'bg-red-950 text-red-400 border border-red-700' : 'bg-amber-950 text-amber-400 border border-amber-700'}`}>{result.severity.toUpperCase()}</span>
+              </div>
+              <div className="bg-slate-950 p-4 rounded-lg text-xs space-y-3">
+                <div className="text-slate-300"><span className="font-bold text-amber-400">Urgency:</span> {result.urgency}</div>
+                <div className="text-slate-300"><span className="font-bold text-red-400">Danger:</span> {result.dangerExplanation}</div>
+                <div className="text-slate-300"><span className="font-bold text-sky-400">Safety Context:</span> {result.necContext}</div>
+                <div className="p-3 bg-red-950/20 border border-red-900/50 rounded-lg text-slate-200"><span className="font-bold text-emerald-400 block mb-1">Immediate Action:</span> {result.immediateAction}</div>
+                <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg text-slate-200"><span className="font-bold text-sky-400 block mb-1">Permanent Remediation:</span> {result.remediation}</div>
+                <div className="text-slate-300"><span className="font-bold text-slate-200">Estimated Cost:</span> {result.costEstimateRange}</div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function InspectionReportView({ items, itemStatuses, homeYear }) {
+      const hazards = items.filter(i => itemStatuses[i.id] === 'hazard');
+      const critical = hazards.filter(h => h.severity === 'critical');
+      const safeItems = items.filter(i => itemStatuses[i.id] === 'safe');
+      
+      const penalty = (critical.length * 20) + ((hazards.length - critical.length) * 10);
+      const score = Math.max(10, Math.min(100, 100 - penalty));
+
+      return (
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-6">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Electrical Audit Summary</h2>
+              <div className="text-slate-400 text-sm mt-1">Built: {homeYear} | {new Date().toLocaleDateString()}</div>
+            </div>
+            <div className="bg-slate-950 border border-slate-700 p-4 rounded-xl text-center min-w-[150px]">
+              <div className="text-xs text-slate-400 uppercase font-mono">Safety Index</div>
+              <div className={`text-4xl font-extrabold ${score >= 80 ? 'text-emerald-400' : score >= 60 ? 'text-amber-400' : 'text-red-400'}`}>{score}%</div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+              <div className="text-2xl font-bold text-white">{safeItems.length}</div>
+              <div className="text-xs text-slate-400">Safe Items</div>
+            </div>
+            <div className="bg-slate-900 border border-amber-800/50 p-4 rounded-xl">
+              <div className="text-2xl font-bold text-amber-400">{hazards.length}</div>
+              <div className="text-xs text-slate-400">Total Hazards</div>
+            </div>
+            <div className="bg-slate-900 border border-red-800/50 p-4 rounded-xl">
+              <div className="text-2xl font-bold text-red-400">{critical.length}</div>
+              <div className="text-xs text-slate-400">Critical Risks</div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2"><FileText className="w-5 h-5 text-amber-400"/> Electrician Punch List</h3>
+            {hazards.length === 0 ? (
+              <div className="p-6 text-center bg-emerald-950/20 border border-emerald-900/50 rounded-xl">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2"/>
+                <div className="font-bold text-white">No Hazards Flagged</div>
+              </div>
+            ) : (
+              hazards.map(item => (
+                <div key={item.id} className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                  <div className={`text-xs font-bold ${item.severity === 'critical' ? 'text-red-400' : 'text-amber-400'} uppercase`}>{item.severity} HAZARD</div>
+                  <div className="font-bold text-white mt-1">{item.title}</div>
+                  <div className="text-xs text-slate-400 mt-1">{item.remediation}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // --- MAIN APP ---
+    function App() {
+      const [activeTab, setActiveTab] = useState('intro');
+      const [homeYear, setHomeYear] = useState(1972);
+      const [itemStatuses, setItemStatuses] = useState({});
+
+      const TABS = [
+        { id: 'intro', label: 'Home' },
+        { id: 'checklist', label: 'Checklist' },
+        { id: 'era', label: 'Era Risks' },
+        { id: 'guide', label: 'Visual Guide' },
+        { id: 'diagnose', label: 'AI Inspector' },
+        { id: 'report', label: 'Audit Report' },
+      ];
+
+      const handleDownloadApp = () => {
+        const htmlContent = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+        const blob = new Blob([htmlContent], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'VoltGuard.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-amber-400 selection:text-slate-950 flex flex-col">
+          {/* Header */}
+          <header className="sticky top-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3 no-print">
+            <div className="max-w-7xl mx-auto flex items-center justify-between">
+              <div className="text-xl font-bold text-amber-400 flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('intro')}>
+                <span className="w-2.5 h-2.5 bg-amber-400 rotate-45 block"></span>
+                VoltGuard
+              </div>
+              <nav className="hidden md:flex gap-6">
+                {TABS.map(tab => (
+                  <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`text-sm font-semibold pb-1 border-b-2 transition-colors ${activeTab === tab.id ? 'border-amber-400 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}>
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+              <button 
+                onClick={handleDownloadApp} 
+                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                title="Download this app to your computer"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Save App</span>
+              </button>
+            </div>
+          </header>
+
+          {/* Main Content */}
+          <main className="flex-1 w-full max-w-7xl mx-auto py-6 px-4 sm:px-6">
+            {activeTab === 'intro' && <IntroView setActiveTab={setActiveTab} />}
+            {activeTab === 'checklist' && <ChecklistView items={CHECKLIST_ITEMS} itemStatuses={itemStatuses} setItemStatuses={setItemStatuses} />}
+            {activeTab === 'era' && <EraMatrixView homeYear={homeYear} setHomeYear={setHomeYear} />}
+            {activeTab === 'guide' && <VisualGuideView />}
+            {activeTab === 'diagnose' && <AiDiagnosticianView homeYear={homeYear} />}
+            {activeTab === 'report' && <InspectionReportView items={CHECKLIST_ITEMS} itemStatuses={itemStatuses} homeYear={homeYear} />}
+          </main>
+        </div>
+      );
+    }
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
+```
